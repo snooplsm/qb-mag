@@ -88,7 +88,9 @@ const ACTIVITY_IDLE_MS = 60_000;
 const SEARCH_HINTS = ["DOWNLOADING", "DONE"];
 const DEFAULT_SORT = "added_desc";
 const SEND_LABEL = "SEND";
-const IS_MOCK_MODE = new URLSearchParams(window.location.search).has("mock");
+const MOCK_PARAMS = new URLSearchParams(window.location.search);
+const IS_MOCK_MODE = MOCK_PARAMS.has("mock");
+const MOCK_SCREEN = (MOCK_PARAMS.get("screen") || "queue").toLowerCase();
 
 let queueRaw = [];
 let queueEnriched = [];
@@ -150,19 +152,19 @@ function buildMockQueueItems() {
     {
       torrent: {
         hash: "mock001",
-        name: "The Last Signal 2026 S01E04 2160p DSNP WEB-DL H265-QB",
+        name: "The Best Show 2026 S01E04 2160p DSNP WEB-DL H265-QB",
         state: "downloading",
         progress: 0.62,
         dlspeed: 8_400_000,
         upspeed: 0,
         completed: 3_100_000_000,
         size: 5_000_000_000,
-        save_path: "/tv/The Last Signal/Season 1",
+        save_path: "/tv/The Best Show/Season 1",
         added_on: now - 2400
       },
       media: {
         kind: "show",
-        name: "The Last Signal",
+        name: "The Best Show",
         season: 1,
         episode: 4,
         quality: "2160p",
@@ -175,8 +177,8 @@ function buildMockQueueItems() {
         language: null
       },
       tmdb: {
-        title: "The Last Signal",
-        image_url: mockPosterData("LAST SIGNAL", "#1f5ca3"),
+        title: "The Best Show",
+        image_url: mockPosterData("BEST SHOW", "#1f5ca3"),
         episode_image_url: null,
         page_url: "https://www.themoviedb.org/"
       }
@@ -184,19 +186,19 @@ function buildMockQueueItems() {
     {
       torrent: {
         hash: "mock002",
-        name: "Northbound 2025 1080p WEB-DL H264-QB",
+        name: "Top Movie 2025 1080p WEB-DL H264-QB",
         state: "stalledDL",
         progress: 0.34,
         dlspeed: 2_100_000,
         upspeed: 0,
         completed: 950_000_000,
         size: 2_800_000_000,
-        save_path: "/movies/Northbound 2025",
+        save_path: "/movies/Top Movie 2025",
         added_on: now - 5400
       },
       media: {
         kind: "movie",
-        title: "Northbound",
+        title: "Top Movie",
         year: 2025,
         quality: "1080p",
         source: "WEB-DL",
@@ -208,8 +210,8 @@ function buildMockQueueItems() {
         language: null
       },
       tmdb: {
-        title: "Northbound",
-        image_url: mockPosterData("NORTHBOUND", "#40622a"),
+        title: "Top Movie",
+        image_url: mockPosterData("TOP MOVIE", "#40622a"),
         episode_image_url: null,
         page_url: "https://www.themoviedb.org/"
       }
@@ -217,19 +219,19 @@ function buildMockQueueItems() {
     {
       torrent: {
         hash: "mock003",
-        name: "One Piece - Season 2",
-        state: "pausedDL",
-        progress: 0.87,
+        name: "Wonder Year - Season 2",
+        state: "stoppedUP",
+        progress: 1,
         dlspeed: 0,
         upspeed: 0,
-        completed: 11_300_000_000,
+        completed: 13_000_000_000,
         size: 13_000_000_000,
-        save_path: "/tv/One Piece/Season 2",
+        save_path: "/tv/Wonder Year/Season 2",
         added_on: now - 8200
       },
       media: {
         kind: "show",
-        name: "One Piece",
+        name: "Wonder Year",
         season: 2,
         episode: null,
         quality: "1080p",
@@ -242,8 +244,8 @@ function buildMockQueueItems() {
         language: null
       },
       tmdb: {
-        title: "One Piece",
-        image_url: mockPosterData("ONE PIECE", "#6d3e1b"),
+        title: "Wonder Year",
+        image_url: mockPosterData("WONDER YEAR", "#6d3e1b"),
         episode_image_url: null,
         page_url: "https://www.themoviedb.org/"
       }
@@ -251,15 +253,51 @@ function buildMockQueueItems() {
   ];
 }
 
+function buildMockAddPreview() {
+  return {
+    media: {
+      kind: "show",
+      name: "The Best Show",
+      season: 1,
+      episode: 4,
+      quality: "2160p",
+      source: "WEB-DL",
+      format: "H.265",
+      hdr: false,
+      release_group: "QB",
+      proper: false,
+      repack: false,
+      language: null
+    },
+    tmdb: {
+      title: "The Best Show",
+      image_url: mockPosterData("BEST SHOW", "#1f5ca3"),
+      episode_image_url: null,
+      page_url: "https://www.themoviedb.org/"
+    }
+  };
+}
+
 function bootMockMode() {
   hydrateFromStorage();
-  setTab("queue");
-  const mockItems = buildMockQueueItems();
-  queueEnriched = mockItems;
-  queueRaw = mockItems.map((x) => x.torrent);
-  renderQueueCards(mockItems);
-  updateFooterStats(mockItems, 240 * 1024 * 1024 * 1024);
-  setStatus("Mock mode");
+  if (MOCK_SCREEN === "add") {
+    const mock = buildMockAddPreview();
+    setTab("queue");
+    setAddOpen(true);
+    els.magnet.value =
+      "magnet:?xt=urn:btih:MOCK000000000000000000000000000000000000&dn=The+Best+Show+2026+S01E04+2160p+WEB-DL+H265-QB";
+    els.savePath.value = "/tv/The Best Show/Season 1";
+    renderMedia(mock.media, mock.tmdb);
+    updateFooterStats([], 240 * 1024 * 1024 * 1024);
+  } else {
+    setTab("queue");
+    const mockItems = buildMockQueueItems();
+    queueEnriched = mockItems;
+    queueRaw = mockItems.map((x) => x.torrent);
+    renderQueueCards(mockItems);
+    updateFooterStats(mockItems, 240 * 1024 * 1024 * 1024);
+  }
+  setStatus("");
 }
 
 function formatHistoryWhen(tsUnix) {

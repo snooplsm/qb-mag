@@ -37,6 +37,8 @@
       .links {
         margin-top: 14px;
         display: flex;
+        flex-wrap: wrap;
+        align-items: center;
         gap: 10px;
       }
       .links a {
@@ -46,12 +48,59 @@
         border-radius: 10px;
         padding: 8px 12px;
         background: #132b4d;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 42px;
+      }
+      .links a.badge-link {
+        padding: 0;
+        border: 0;
+        background: transparent;
+      }
+      .links a.badge-link img {
+        margin-top: 0;
+        width: 220px;
+        border: 0;
       }
       img {
         margin-top: 16px;
         width: 100%;
         border-radius: 12px;
         border: 1px solid #244167;
+      }
+      .release-meta {
+        margin-top: 14px;
+        border: 1px solid #244167;
+        border-radius: 10px;
+        padding: 12px;
+        background: #0c1f3c;
+      }
+      .release-meta h2 {
+        margin: 0 0 8px;
+        font-size: 1rem;
+      }
+      .release-meta p {
+        margin: 0 0 8px;
+        font-size: 0.95rem;
+      }
+      .release-meta ul {
+        margin: 0;
+        padding-left: 18px;
+      }
+      .release-meta li {
+        margin: 3px 0;
+      }
+      .release-meta a {
+        color: #b9d7ff;
+      }
+      footer {
+        margin-top: 14px;
+        color: #9fb4d8;
+        font-size: 0.9rem;
+      }
+      footer a {
+        color: #bfd7ff;
       }
     </style>
   </head>
@@ -61,8 +110,78 @@
       <p>A GUI desktop interface bridge between qBittorrent Web UI.</p>
       <div class="links">
         <a href="https://github.com/snooplsm/qb-mag/releases">Releases</a>
+        <a class="badge-link" href="https://github.com/snooplsm/qb-mag/releases/download/v0.1.1/QB.Mag_0.1.0_aarch64.dmg">
+          <img src="./assets/apple-silicon-badge.svg" alt="Download QB Mag for Apple Silicon" />
+        </a>
+        <a class="badge-link" href="https://github.com/snooplsm/qb-mag/releases">
+          <img src="./assets/intel-mac-badge.svg" alt="Download QB Mag for Intel Mac" />
+        </a>
       </div>
+      <section class="release-meta">
+        <h2>Release Info</h2>
+        <p id="currentVersion">Current version: loading...</p>
+        <p id="latestReleaseDate">Latest release date: loading...</p>
+        <p>Previous versions:</p>
+        <ul id="previousVersions">
+          <li>Loading...</li>
+        </ul>
+      </section>
       <img src="./assets/mock-queue.png" alt="QB Mag queue preview" />
+      <img src="./assets/mock-add.png" alt="QB Mag add torrent preview" />
+      <footer>
+        Source: <a href="https://github.com/snooplsm/qb-mag">github.com/snooplsm/qb-mag</a>
+      </footer>
     </main>
+    <script>
+      const currentEl = document.getElementById("currentVersion");
+      const latestEl = document.getElementById("latestReleaseDate");
+      const listEl = document.getElementById("previousVersions");
+
+      function fmtDate(v) {
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) return "Unknown";
+        return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+      }
+
+      async function loadReleases() {
+        try {
+          const res = await fetch("https://api.github.com/repos/snooplsm/qb-mag/releases?per_page=20");
+          if (!res.ok) throw new Error("GitHub API error");
+          const releases = await res.json();
+          if (!Array.isArray(releases) || releases.length === 0) {
+            currentEl.textContent = "Current version: unavailable";
+            latestEl.textContent = "Latest release date: unavailable";
+            listEl.innerHTML = "<li>No releases yet.</li>";
+            return;
+          }
+
+          const latest = releases[0];
+          const currentVersion = latest.tag_name || latest.name || "Unknown";
+          currentEl.textContent = `Current version: ${currentVersion}`;
+          latestEl.textContent = `Latest release date: ${fmtDate(latest.published_at || latest.created_at)}`;
+
+          const versions = releases;
+          if (!versions.length) {
+            listEl.innerHTML = "<li>No versions yet.</li>";
+            return;
+          }
+          listEl.innerHTML = versions
+            .map((r) => {
+              const name = r.name || r.tag_name || "Unnamed";
+              const date = fmtDate(r.published_at || r.created_at);
+              const url = r.html_url || "https://github.com/snooplsm/qb-mag/releases";
+              return `<li><a href="${url}">${name}</a> (${date})</li>`;
+            })
+            .join("");
+        } catch {
+          currentEl.textContent = "Current version: unavailable";
+          latestEl.textContent = "Latest release date: unavailable";
+          listEl.innerHTML =
+            '<li><a href="https://github.com/snooplsm/qb-mag/releases">View releases on GitHub</a></li>';
+        }
+      }
+
+      loadReleases();
+    </script>
   </body>
 </html>

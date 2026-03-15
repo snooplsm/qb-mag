@@ -15,8 +15,18 @@ permissions:
   contents: write
 
 jobs:
-  macos-dmg:
-    runs-on: macos-14
+  build-macos-dmg:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            arch: aarch64
+            output_name: QB-Mag-macOS-apple-silicon.dmg
+          - runner: macos-13
+            arch: x86_64
+            output_name: QB-Mag-macOS-intel.dmg
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,19 +46,41 @@ jobs:
       - name: Build app + DMG
         run: npm run build
 
-      - name: Upload DMG to tag release (push tags)
+      - name: Normalize artifact name
+        run: |
+          mkdir -p dist
+          FILE="$(ls src-tauri/target/release/bundle/dmg/*_${{ matrix.arch }}.dmg | head -n1)"
+          cp "$FILE" "dist/${{ matrix.output_name }}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmg-${{ matrix.arch }}
+          path: dist/${{ matrix.output_name }}
+          if-no-files-found: error
+
+  publish-release:
+    needs: build-macos-dmg
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Publish release assets (tag push)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/bundle/dmg/*.dmg
+          files: dist/**/*.dmg
           fail_on_unmatched_files: true
 
-      - name: Upload DMG to tag release (manual dispatch)
+      - name: Publish release assets (manual dispatch)
         if: github.event_name == 'workflow_dispatch'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag }}
           target_commitish: ${{ github.sha }}
           generate_release_notes: true
-          files: src-tauri/target/release/bundle/dmg/*.dmg
+          files: dist/**/*.dmg
           fail_on_unmatched_files: true
