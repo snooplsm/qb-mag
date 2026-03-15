@@ -6,10 +6,12 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build --bundles app && ./scripts/build-dmg.sh",
-    "install:mac": "./scripts/install-macos.sh"
+    "install:mac": "./scripts/install-macos.sh",
+    "docs:screenshot": "node ./scripts/capture-mock-screenshot.mjs"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.0.0"
+    "@tauri-apps/cli": "^2.0.0",
+    "playwright": "^1.54.0"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0"

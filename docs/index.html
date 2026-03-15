@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QB Mag</title>
+    <link rel="icon" type="image/png" href="./favicon.png" />
     <style>
       :root {
         color-scheme: dark;
@@ -33,12 +34,35 @@
         color: #bfd2f5;
         font-size: 1.05rem;
       }
+      .links {
+        margin-top: 14px;
+        display: flex;
+        gap: 10px;
+      }
+      .links a {
+        color: #e7f1ff;
+        text-decoration: none;
+        border: 1px solid #2d4f7e;
+        border-radius: 10px;
+        padding: 8px 12px;
+        background: #132b4d;
+      }
+      img {
+        margin-top: 16px;
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid #244167;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>QB Mag</h1>
-      <p>A GUI interface bridge between qBittorrent Web UI.</p>
+      <p>A GUI desktop interface bridge between qBittorrent Web UI.</p>
+      <div class="links">
+        <a href="https://github.com/snooplsm/qb-mag/releases">Releases</a>
+      </div>
+      <img src="./assets/mock-queue.png" alt="QB Mag queue preview" />
     </main>
   </body>
 </html>

@@ -88,6 +88,7 @@ const ACTIVITY_IDLE_MS = 60_000;
 const SEARCH_HINTS = ["DOWNLOADING", "DONE"];
 const DEFAULT_SORT = "added_desc";
 const SEND_LABEL = "SEND";
+const IS_MOCK_MODE = new URLSearchParams(window.location.search).has("mock");
 
 let queueRaw = [];
 let queueEnriched = [];
@@ -135,6 +136,130 @@ function formatBytes(bytes) {
 
 function formatSpeed(bytesSec) {
   return `${formatBytes(bytesSec)}/s`;
+}
+
+function mockPosterData(label, bg = "#1c3f72") {
+  const safe = encodeURIComponent(String(label || "Mock"));
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 300 450'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='${bg}'/><stop offset='1' stop-color='#07162c'/></linearGradient></defs><rect width='300' height='450' fill='url(#g)'/><text x='50%' y='50%' fill='#e7f1ff' font-family='Avenir,Arial,sans-serif' font-size='30' text-anchor='middle' dominant-baseline='middle'>${safe}</text></svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function buildMockQueueItems() {
+  const now = Math.floor(Date.now() / 1000);
+  return [
+    {
+      torrent: {
+        hash: "mock001",
+        name: "The Last Signal 2026 S01E04 2160p DSNP WEB-DL H265-QB",
+        state: "downloading",
+        progress: 0.62,
+        dlspeed: 8_400_000,
+        upspeed: 0,
+        completed: 3_100_000_000,
+        size: 5_000_000_000,
+        save_path: "/tv/The Last Signal/Season 1",
+        added_on: now - 2400
+      },
+      media: {
+        kind: "show",
+        name: "The Last Signal",
+        season: 1,
+        episode: 4,
+        quality: "2160p",
+        source: "WEB-DL",
+        format: "H.265",
+        hdr: false,
+        release_group: "QB",
+        proper: false,
+        repack: false,
+        language: null
+      },
+      tmdb: {
+        title: "The Last Signal",
+        image_url: mockPosterData("LAST SIGNAL", "#1f5ca3"),
+        episode_image_url: null,
+        page_url: "https://www.themoviedb.org/"
+      }
+    },
+    {
+      torrent: {
+        hash: "mock002",
+        name: "Northbound 2025 1080p WEB-DL H264-QB",
+        state: "stalledDL",
+        progress: 0.34,
+        dlspeed: 2_100_000,
+        upspeed: 0,
+        completed: 950_000_000,
+        size: 2_800_000_000,
+        save_path: "/movies/Northbound 2025",
+        added_on: now - 5400
+      },
+      media: {
+        kind: "movie",
+        title: "Northbound",
+        year: 2025,
+        quality: "1080p",
+        source: "WEB-DL",
+        format: "H.264",
+        hdr: false,
+        release_group: "QB",
+        proper: false,
+        repack: false,
+        language: null
+      },
+      tmdb: {
+        title: "Northbound",
+        image_url: mockPosterData("NORTHBOUND", "#40622a"),
+        episode_image_url: null,
+        page_url: "https://www.themoviedb.org/"
+      }
+    },
+    {
+      torrent: {
+        hash: "mock003",
+        name: "One Piece - Season 2",
+        state: "pausedDL",
+        progress: 0.87,
+        dlspeed: 0,
+        upspeed: 0,
+        completed: 11_300_000_000,
+        size: 13_000_000_000,
+        save_path: "/tv/One Piece/Season 2",
+        added_on: now - 8200
+      },
+      media: {
+        kind: "show",
+        name: "One Piece",
+        season: 2,
+        episode: null,
+        quality: "1080p",
+        source: "WEBRip",
+        format: "x264",
+        hdr: false,
+        release_group: "QB",
+        proper: false,
+        repack: false,
+        language: null
+      },
+      tmdb: {
+        title: "One Piece",
+        image_url: mockPosterData("ONE PIECE", "#6d3e1b"),
+        episode_image_url: null,
+        page_url: "https://www.themoviedb.org/"
+      }
+    }
+  ];
+}
+
+function bootMockMode() {
+  hydrateFromStorage();
+  setTab("queue");
+  const mockItems = buildMockQueueItems();
+  queueEnriched = mockItems;
+  queueRaw = mockItems.map((x) => x.torrent);
+  renderQueueCards(mockItems);
+  updateFooterStats(mockItems, 240 * 1024 * 1024 * 1024);
+  setStatus("Mock mode");
 }
 
 function formatHistoryWhen(tsUnix) {
@@ -1674,33 +1799,37 @@ document.addEventListener("visibilitychange", () => {
   startAutoRefresh();
 });
 
-if (listen) {
-  console.info("[deep-link] magnet-link listener registered");
-  await listen("magnet-link", (event) => {
-    const payload = event.payload;
-    if (typeof payload === "string" && payload.startsWith("magnet:")) {
-      console.info("[deep-link] live magnet-link event", payload.slice(0, 96));
-      applyIncomingMagnet(payload);
-    }
-  });
-  await listen("torrent-file-link", (event) => {
-    const payload = event.payload;
-    if (typeof payload === "string" && /\.torrent$/i.test(payload.trim())) {
-      console.info("[deep-link] live torrent-file-link event", payload);
-      applyIncomingTorrentFile(payload);
-    }
-  });
+if (IS_MOCK_MODE) {
+  bootMockMode();
 } else {
-  console.info("[deep-link] listen API unavailable");
-}
+  if (listen) {
+    console.info("[deep-link] magnet-link listener registered");
+    await listen("magnet-link", (event) => {
+      const payload = event.payload;
+      if (typeof payload === "string" && payload.startsWith("magnet:")) {
+        console.info("[deep-link] live magnet-link event", payload.slice(0, 96));
+        applyIncomingMagnet(payload);
+      }
+    });
+    await listen("torrent-file-link", (event) => {
+      const payload = event.payload;
+      if (typeof payload === "string" && /\.torrent$/i.test(payload.trim())) {
+        console.info("[deep-link] live torrent-file-link event", payload);
+        applyIncomingTorrentFile(payload);
+      }
+    });
+  } else {
+    console.info("[deep-link] listen API unavailable");
+  }
 
-hydrateFromStorage();
-setSendButtonLabel();
-await consumePendingMagnet();
-await consumePendingTorrentFile();
-if (!els.magnet.value.trim()) {
-  renderMedia(null);
-}
+  hydrateFromStorage();
+  setSendButtonLabel();
+  await consumePendingMagnet();
+  await consumePendingTorrentFile();
+  if (!els.magnet.value.trim()) {
+    renderMedia(null);
+  }
 
-await refreshAll({ force: true }).catch((e) => setStatus(String(e), true));
-startAutoRefresh();
+  await refreshAll({ force: true }).catch((e) => setStatus(String(e), true));
+  startAutoRefresh();
+}
