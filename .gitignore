@@ -1,0 +1,8 @@
+node_modules/
+target/
+.DS_Store
+
+# private envs
+.env
+.env.*
+!.env.example

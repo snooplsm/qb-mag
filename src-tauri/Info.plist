@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>QB Mag</string>
+  <key>CFBundleDisplayName</key>
+  <string>QB Mag</string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>QB Mag needs local network access to connect to your qBittorrent Web UI.</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Magnet Links</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>magnet</string>
+      </array>
+    </dict>
+  </array>
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Torrent File</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSHandlerRank</key>
+      <string>Owner</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>org.bittorrent.torrent</string>
+      </array>
+      <key>CFBundleTypeExtensions</key>
+      <array>
+        <string>torrent</string>
+      </array>
+      <key>CFBundleTypeMIMETypes</key>
+      <array>
+        <string>application/x-bittorrent</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

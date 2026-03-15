@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QB Mag</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar" data-tauri-drag-region>
+      <div class="brand">
+        <h1>QB Mag</h1>
+        <nav class="tabs topbar-tabs">
+          <button id="tabQueue" class="tab active" type="button">Queue</button>
+          <button id="tabHistory" class="tab" type="button">History</button>
+        </nav>
+      </div>
+      <div class="topbar-actions">
+        <button id="addToggle" class="icon-btn primary" type="button" aria-label="Open add magnet">＋</button>
+        <div class="sort-wrap">
+          <button id="sortToggle" class="sort-toggle" type="button" aria-label="Sort queue" aria-expanded="false">Sort ↑↓</button>
+          <div id="sortMenu" class="sort-menu">
+            <div class="sort-row">
+              <span class="sort-label">Size</span>
+              <button type="button" class="sort-item" data-sort="size_asc">↑</button>
+              <button type="button" class="sort-item" data-sort="size_desc">↓</button>
+            </div>
+            <div class="sort-row">
+              <span class="sort-label">Added</span>
+              <button type="button" class="sort-item" data-sort="added_asc">↑</button>
+              <button type="button" class="sort-item" data-sort="added_desc">↓</button>
+            </div>
+            <div class="sort-row">
+              <span class="sort-label">Title</span>
+              <button type="button" class="sort-item" data-sort="title_asc">↑</button>
+              <button type="button" class="sort-item" data-sort="title_desc">↓</button>
+            </div>
+            <div class="sort-row">
+              <span class="sort-label">Status</span>
+              <button type="button" class="sort-item" data-sort="status_asc">↑</button>
+              <button type="button" class="sort-item" data-sort="status_desc">↓</button>
+            </div>
+          </div>
+        </div>
+        <div class="search-wrap">
+          <input id="searchInput" class="search" autocomplete="off" placeholder="Search downloads..." />
+          <div id="searchSuggest" class="search-suggest"></div>
+        </div>
+        <button id="settingsToggle" class="icon-btn settings-btn" type="button" aria-label="Open settings" aria-expanded="false">⚙</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section id="viewQueue" class="view active">
+        <div id="queueCards" class="cards"></div>
+      </section>
+
+      <section id="viewHistory" class="view">
+        <div class="view-head">
+          <h2>History</h2>
+          <div class="actions compact">
+            <button id="refreshHistory" type="button">Refresh</button>
+            <button id="clearHistory" type="button">Clear</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>When</th>
+                <th>Status</th>
+                <th>Name</th>
+                <th>Hash/ID</th>
+                <th>Path</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <p id="status" class="status"></p>
+    </main>
+
+    <footer class="footer-stats">
+      <span id="statNetwork" class="stat-pill dot-green">Network: Stable</span>
+      <span id="statQueue" class="stat-pill dot-blue">Queue: 0 active</span>
+      <span id="statStorage" class="stat-pill dot-blue">Storage: --</span>
+      <span id="statSpeed" class="stat-pill dot-yellow">Total Throughput: 0 B/s</span>
+    </footer>
+
+    <div id="addBackdrop" class="add-backdrop hidden"></div>
+    <section id="addPanel" class="panel add-panel add-modal hidden">
+      <div class="view-head">
+        <h2>Add Magnet</h2>
+        <div class="actions compact">
+          <button id="openTorrent" type="button">Open Torrent</button>
+          <button id="addClose" type="button">Close</button>
+        </div>
+      </div>
+      <div id="addLayout" class="add-layout">
+        <div class="add-form">
+          <label>
+            Magnet URL
+            <input id="magnet" placeholder="magnet:?xt=urn:btih:..." />
+          </label>
+          <label>
+            Save Path Override (optional)
+            <input id="savePath" placeholder="/downloads/custom" />
+          </label>
+          <div class="actions">
+            <button id="send" class="primary" type="button">SEND</button>
+          </div>
+        </div>
+        <div id="media" class="meta empty add-preview hidden"></div>
+      </div>
+      <input id="torrentFileInput" type="file" accept=".torrent,application/x-bittorrent" hidden />
+    </section>
+
+    <div id="settingsBackdrop" class="settings-backdrop"></div>
+    <aside id="settingsPanel" class="settings-drawer" aria-label="Settings Drawer">
+      <div class="settings-head">
+        <h2>Settings</h2>
+        <button id="settingsClose" type="button">Close</button>
+      </div>
+      <div class="grid">
+        <label>
+          qBittorrent Host
+          <input id="host" placeholder="http://192.168.50.23:8080" />
+        </label>
+        <label>
+          qBittorrent Username (optional)
+          <input id="username" placeholder="admin" />
+        </label>
+        <label>
+          qBittorrent Password (optional)
+          <div class="secret-input">
+            <input id="password" type="password" placeholder="••••••" />
+            <button class="reveal-btn" type="button" data-target="password" aria-label="Show password">Show</button>
+          </div>
+        </label>
+      </div>
+      <hr />
+      <div class="grid">
+        <label>
+          TMDb API Key (optional)
+          <div class="secret-input">
+            <input id="tmdbApiKey" type="password" placeholder="TMDb API key" />
+            <button class="reveal-btn" type="button" data-target="tmdbApiKey" aria-label="Show TMDb API key">Show</button>
+          </div>
+        </label>
+        <label>
+          TMDb Access Token (optional)
+          <div class="secret-input">
+            <input id="tmdbAccessToken" type="password" placeholder="TMDb v4 access token" />
+            <button class="reveal-btn" type="button" data-target="tmdbAccessToken" aria-label="Show TMDb access token">Show</button>
+          </div>
+        </label>
+      </div>
+      <p class="hint">Uses API key or Access Token. If blank, env vars are used.</p>
+    </aside>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

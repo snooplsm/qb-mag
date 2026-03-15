@@ -1,0 +1,27 @@
+[package]
+name = "qbittorrent-magnet"
+version = "0.1.0"
+description = "qBittorrent magnet helper in Tauri"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "qbittorrent_magnet_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "charset", "json", "cookies", "multipart"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+url = "2"
+urlencoding = "2"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
