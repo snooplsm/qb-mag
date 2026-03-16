@@ -1472,7 +1472,8 @@ async function sendMagnet() {
     qbUrl: host,
     magnetUrl: magnet,
     ...authArgs(),
-    savePathOverride: savePathOverride || null
+    savePathOverride: savePathOverride || null,
+    ...tmdbArgs()
   });
 
   renderMedia(result.media ?? null);

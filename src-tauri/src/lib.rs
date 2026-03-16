@@ -80,6 +80,12 @@ struct HistoryEntry {
     media: Option<Media>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct TmdbAlias {
+    media_type: String,
+    title: String,
+}
+
 #[derive(Debug, Serialize)]
 struct QbTorrentInfo {
     hash: String,
@@ -192,6 +198,8 @@ async fn upload_magnet(
     username: Option<String>,
     password: Option<String>,
     save_path_override: Option<String>,
+    tmdb_api_key: Option<String>,
+    tmdb_access_token: Option<String>,
 ) -> Result<UploadResult, String> {
     let auth = Auth { username, password };
     let mut media = parse_magnet_display_name(&magnet_url);
@@ -233,6 +241,24 @@ async fn upload_magnet(
     } else {
         (None, dn_name.clone())
     };
+
+    if success {
+        if let (Some(hash), Some(media_ref)) = (torrent_hash.as_deref(), media.as_ref()) {
+            if let Ok(Some(meta)) = fetch_tmdb_metadata(
+                app.clone(),
+                media_ref.clone(),
+                tmdb_api_key.unwrap_or_default(),
+                tmdb_access_token,
+            )
+            .await
+            {
+                let desired = meta.title.trim();
+                if !desired.is_empty() {
+                    let _ = rename_torrent(&client, &base, hash, desired).await;
+                }
+            }
+        }
+    }
 
     let result = UploadResult {
         success,
@@ -611,6 +637,7 @@ fn delete_history_entry(app: AppHandle, id: u64) -> Result<bool, String> {
 
 #[tauri::command]
 async fn fetch_tmdb_metadata(
+    app: AppHandle,
     media: Media,
     tmdb_api_key: String,
     tmdb_access_token: Option<String>,
@@ -630,9 +657,36 @@ async fn fetch_tmdb_metadata(
         _ => return Ok(None),
     };
 
+    let alias_key = tmdb_alias_key(&query);
     let mut search_queries: Vec<(String, Option<i32>)> = vec![(query.clone(), None)];
+    if media_type == "tv" {
+        if let Some(alias) = read_tmdb_alias(&app, &alias_key).ok().flatten() {
+            if alias.media_type == media_type {
+                let aliased_title = alias.title.trim().to_string();
+                if !aliased_title.is_empty()
+                    && !search_queries
+                        .iter()
+                        .any(|(q, _)| q.eq_ignore_ascii_case(&aliased_title))
+                {
+                    search_queries.insert(0, (aliased_title, None));
+                }
+            }
+        }
+    }
+    let mut origin_hint: Option<&'static str> = None;
     let mut wanted_year = None;
     if media_type == "tv" {
+        let (country_stripped, country_hint) = split_trailing_country_hint(&query);
+        if let Some(code) = country_hint {
+            origin_hint = Some(code);
+            if !country_stripped.is_empty()
+                && !search_queries
+                    .iter()
+                    .any(|(q, _)| q.eq_ignore_ascii_case(&country_stripped))
+            {
+                search_queries.insert(0, (country_stripped.clone(), None));
+            }
+        }
         let (base_name, year_opt) = split_trailing_year(&query);
         wanted_year = year_opt;
         if let Some(y) = year_opt {
@@ -676,6 +730,13 @@ async fn fetch_tmdb_metadata(
             .and_then(Value::as_array)
             .and_then(|arr| {
                 if media_type == "tv" {
+                    if let Some(origin) = origin_hint {
+                        if let Some(by_origin) =
+                            arr.iter().find(|item| result_origin_match(item, origin))
+                        {
+                            return Some(by_origin.clone());
+                        }
+                    }
                     if let Some(y) = wanted_year {
                         if let Some(exact) =
                             arr.iter().find(|item| result_year(item, media_type) == Some(y))
@@ -721,6 +782,17 @@ async fn fetch_tmdb_metadata(
         .and_then(Value::as_str)
         .unwrap_or(query.as_str())
         .to_string();
+
+    if media_type == "tv" {
+        let _ = write_tmdb_alias(
+            &app,
+            &alias_key,
+            TmdbAlias {
+                media_type: media_type.to_string(),
+                title: title.clone(),
+            },
+        );
+    }
 
     let overview = data
         .get("overview")
@@ -946,6 +1018,40 @@ fn history_file_path(app: &AppHandle) -> Result<PathBuf, String> {
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create app data dir: {e}"))?;
     dir.push("history.json");
     Ok(dir)
+}
+
+fn tmdb_aliases_file_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let mut dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Failed to resolve app data dir: {e}"))?;
+    fs::create_dir_all(&dir).map_err(|e| format!("Failed to create app data dir: {e}"))?;
+    dir.push("tmdb_aliases.json");
+    Ok(dir)
+}
+
+fn read_tmdb_aliases(app: &AppHandle) -> Result<std::collections::HashMap<String, TmdbAlias>, String> {
+    let path = tmdb_aliases_file_path(app)?;
+    if !path.exists() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let raw = fs::read_to_string(path).map_err(|e| format!("Failed to read TMDb aliases: {e}"))?;
+    serde_json::from_str::<std::collections::HashMap<String, TmdbAlias>>(&raw)
+        .map_err(|e| format!("Failed to parse TMDb aliases JSON: {e}"))
+}
+
+fn read_tmdb_alias(app: &AppHandle, key: &str) -> Result<Option<TmdbAlias>, String> {
+    let map = read_tmdb_aliases(app)?;
+    Ok(map.get(key).cloned())
+}
+
+fn write_tmdb_alias(app: &AppHandle, key: &str, alias: TmdbAlias) -> Result<(), String> {
+    let mut map = read_tmdb_aliases(app)?;
+    map.insert(key.to_string(), alias);
+    let raw =
+        serde_json::to_string_pretty(&map).map_err(|e| format!("Failed to serialize TMDb aliases: {e}"))?;
+    let path = tmdb_aliases_file_path(app)?;
+    fs::write(path, raw).map_err(|e| format!("Failed to write TMDb aliases: {e}"))
 }
 
 fn read_history(app: &AppHandle) -> Result<Vec<HistoryEntry>, String> {
@@ -1281,6 +1387,10 @@ fn normalize(value: &str) -> String {
         .unwrap_or_else(|| value.trim().to_string())
 }
 
+fn tmdb_alias_key(value: &str) -> String {
+    normalize(value).to_lowercase()
+}
+
 fn strip_trailing_year(value: &str) -> String {
     Regex::new(r"(?i)\s+(19\d{2}|20\d{2}|21\d{2})$")
         .ok()
@@ -1321,6 +1431,58 @@ fn result_year(item: &Value, media_type: &str) -> Option<i32> {
     let date = item.get(key).and_then(Value::as_str)?;
     let year = date.get(0..4)?;
     year.parse::<i32>().ok()
+}
+
+fn split_trailing_country_hint(value: &str) -> (String, Option<&'static str>) {
+    let trimmed = value.trim();
+    let re = Regex::new(r"(?i)^(?P<name>.+?)\s+(?P<country>US|UK)$");
+    if let Ok(re) = re {
+        if let Some(caps) = re.captures(trimmed) {
+            let name = caps
+                .name("name")
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_else(|| trimmed.to_string());
+            let hint = caps
+                .name("country")
+                .map(|m| m.as_str().to_ascii_uppercase())
+                .and_then(|code| match code.as_str() {
+                    "US" => Some("US"),
+                    "UK" => Some("GB"),
+                    _ => None,
+                });
+            return (name, hint);
+        }
+    }
+    (trimmed.to_string(), None)
+}
+
+fn result_origin_match(item: &Value, origin: &str) -> bool {
+    item.get("origin_country")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter().any(|v| {
+                v.as_str()
+                    .map(|s| s.eq_ignore_ascii_case(origin))
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+async fn rename_torrent(
+    client: &reqwest::Client,
+    qb_url: &str,
+    hash: &str,
+    new_name: &str,
+) -> Result<bool, String> {
+    let endpoint = format!("{qb_url}/api/v2/torrents/rename");
+    let response = client
+        .post(endpoint)
+        .form(&[("hash", hash), ("name", new_name)])
+        .send()
+        .await
+        .map_err(|e| format!("Rename request failed: {e}"))?;
+    Ok(response.status().is_success())
 }
 
 fn extract_extra_info(display_name: &str) -> ExtraInfo {

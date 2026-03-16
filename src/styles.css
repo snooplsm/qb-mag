@@ -220,10 +220,12 @@ body.macos .topbar {
 
 .add-modal {
   position: fixed;
-  top: 90px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   width: min(760px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
   z-index: 9;
   margin: 0;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
