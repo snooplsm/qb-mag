@@ -94,6 +94,7 @@ const MOCK_SCREEN = (MOCK_PARAMS.get("screen") || "queue").toLowerCase();
 
 let queueRaw = [];
 let queueEnriched = [];
+let originalDnByHash = new Map();
 const mediaCache = new Map();
 const tmdbCache = new Map();
 const tmdbReasonCache = new Map();
@@ -643,7 +644,8 @@ function renderMedia(media, tmdb = null) {
   };
   const title = queuePrimaryTitle(previewItem);
   const subtitle = mediaSubtitle(media, rawName);
-  const episodeTitle = tmdb?.episode_name || "";
+  const episodeTitle = tmdb?.episode_name || fallbackEpisodeTitle(rawName, media);
+  const subtitleText = subtitleWithEpisodeTitle(subtitle, media, episodeTitle);
   const detail = queueDetailLine(media, rawName);
   const transfer = queueTransferLabel(previewItem.torrent, 0);
   const episodeStill = tmdb?.episode_image_url || "";
@@ -674,7 +676,7 @@ function renderMedia(media, tmdb = null) {
       </div>
       <div class="queue-main">
         <h3 class="queue-title">${esc(title)}</h3>
-        <div class="queue-sub">${esc(episodeTitle ? `${subtitle} • ${episodeTitle}` : subtitle)}</div>
+        <div class="queue-sub">${esc(subtitleText)}</div>
         <p class="queue-overview">${esc(detail)}</p>
         <div class="progress-wrap"><div class="progress-bar" style="width:0%"></div></div>
         <div class="queue-meta">Ready to submit</div>
@@ -908,6 +910,7 @@ async function consumePendingTorrentFile() {
 
 async function fetchHistory() {
   const rows = await tauriInvoke("get_history");
+  const dnByHash = new Map();
   let torrentMap = new Map();
   let liveLookupOk = false;
   try {
@@ -931,6 +934,9 @@ async function fetchHistory() {
     const name = historyDisplayName(entry);
     const rawDn = extractDnFromMagnet(entry.magnet_url) || entry.torrent_name || "";
     const hash = (entry.torrent_hash || "").toLowerCase();
+    if (hash && rawDn) {
+      dnByHash.set(hash, rawDn);
+    }
     const live = hash ? torrentMap.get(hash) : null;
     let status;
     if (hash && liveLookupOk) {
@@ -962,6 +968,7 @@ async function fetchHistory() {
     tr.innerHTML = '<td colspan="6">No history yet.</td>';
     els.historyBody.appendChild(tr);
   }
+  originalDnByHash = dnByHash;
 }
 
 async function parseReleaseNameCached(name) {
@@ -974,7 +981,12 @@ async function parseReleaseNameCached(name) {
 async function fetchTmdbCached(media, rawName = "") {
   const lookupMedia = media || inferMediaForLookup(rawName);
   const key = JSON.stringify(lookupMedia || null);
-  if (tmdbCache.has(key)) return tmdbCache.get(key);
+  if (tmdbCache.has(key)) {
+    const cached = tmdbCache.get(key);
+    // Keep successful hits cached, but allow retries for prior misses so
+    // existing queue items can backfill metadata after parser/lookup updates.
+    if (cached) return cached;
+  }
   const { tmdbApiKey, tmdbAccessToken } = tmdbArgs();
   if (!(lookupMedia?.kind === "show" || lookupMedia?.kind === "movie")) {
     tmdbCache.set(key, null);
@@ -1033,6 +1045,30 @@ function mediaSubtitle(media, rawName = "") {
   return media.kind;
 }
 
+function subtitleWithEpisodeTitle(subtitle, media, episodeTitle) {
+  const ep = String(episodeTitle || "").trim();
+  if (!ep) return subtitle;
+  if (media?.kind === "show" && Number.isFinite(Number(media?.episode))) {
+    return `${subtitle} • ${ep}`;
+  }
+  return subtitle;
+}
+
+function fallbackEpisodeTitle(rawName, media) {
+  if (!(media?.kind === "show" && Number.isFinite(Number(media?.episode)))) return "";
+  const source = String(rawName || "");
+  if (!source) return "";
+  const m = source.match(/\bS\d{1,2}E\d{1,2}\b\s+(.+)$/i);
+  if (!m || !m[1]) return "";
+  let tail = String(m[1]).trim();
+  tail = tail.replace(
+    /\s+(?:2160p|1080p|720p|480p|WEB[-\s]?DL|WEBRip|WEB|BLURAY|REMUX|HDTV|HMAX|MAX|AMZN|DSNP|NF|DDP\d(?:\s+\d)?|ATMOS|DV|HDR|H\s?26[45]|X26[45]|HEVC|AV1)\b.*$/i,
+    ""
+  );
+  tail = tail.replace(/\s*\[.*$/, "").trim();
+  return tail;
+}
+
 function cleanShowName(name) {
   const n = stripSpamPrefix(String(name || "").trim());
   return n.replace(/\b(19|20|21)\d{2}\b$/g, "").trim();
@@ -1073,7 +1109,10 @@ function queuePrimaryTitle(item) {
 }
 
 function queueOriginalName(item) {
-  // For queue items from qBittorrent, torrent.name is the closest equivalent to original dn.
+  const hash = String(item?.torrent?.hash || "").toLowerCase();
+  if (hash && originalDnByHash.has(hash)) {
+    return String(originalDnByHash.get(hash) || "").trim();
+  }
   return String(item?.torrent?.name || "").trim();
 }
 
@@ -1251,6 +1290,11 @@ function renderQueueCards(items) {
     const title = queuePrimaryTitle(item);
     const originalName = queueOriginalName(item);
     const subtitle = mediaSubtitle(item.media, t.name);
+    const subtitleText = subtitleWithEpisodeTitle(
+      subtitle,
+      item.media,
+      item.tmdb?.episode_name || fallbackEpisodeTitle(t.name, item.media)
+    );
     const detail = queueDetailLine(item.media, t.name);
     const reason =
       tmdbReasonCache.get(JSON.stringify(item.media || inferMediaForLookup(t.name) || null)) ||
@@ -1318,7 +1362,7 @@ function renderQueueCards(items) {
             title="${esc(originalName || "No original name available")}"
           >${esc(title)}</button>
         </h3>
-        <div class="queue-sub">${esc(subtitle)}</div>
+        <div class="queue-sub">${esc(subtitleText)}</div>
         <p class="queue-overview">${esc(detail)}</p>
         <div class="progress-wrap"><div class="progress-bar" style="width:${pct}%"></div></div>
         <div class="queue-meta">${esc(formatBytes(t.completed))} of ${esc(formatBytes(t.size))} • ${esc(t.state)}</div>
@@ -1407,8 +1451,11 @@ async function refreshQueue({ silent = false } = {}) {
   const limited = torrents.slice(0, 30);
   const enriched = await Promise.all(
     limited.map(async (torrent) => {
-      const media = await parseReleaseNameCached(torrent.name);
-      const tmdb = await fetchTmdbCached(media, torrent.name);
+      const hash = String(torrent.hash || "").toLowerCase();
+      const lookupName =
+        (hash && originalDnByHash.get(hash)) || String(torrent.name || "");
+      const media = await parseReleaseNameCached(lookupName);
+      const tmdb = await fetchTmdbCached(media, lookupName);
       return { torrent, media, tmdb };
     })
   );
@@ -1442,7 +1489,8 @@ async function refreshAll({ force = false, silent = false } = {}) {
 
   refreshInFlight = true;
   try {
-    await Promise.all([refreshQueue({ silent }), fetchHistory()]);
+    await fetchHistory();
+    await refreshQueue({ silent });
     lastRefreshAt = Date.now();
   } finally {
     refreshInFlight = false;

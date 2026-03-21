@@ -14,7 +14,7 @@ struct AppState {
     initial_torrent_file: Mutex<Option<String>>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 enum Media {
     Show {
@@ -243,18 +243,43 @@ async fn upload_magnet(
     };
 
     if success {
-        if let (Some(hash), Some(media_ref)) = (torrent_hash.as_deref(), media.as_ref()) {
-            if let Ok(Some(meta)) = fetch_tmdb_metadata(
-                app.clone(),
-                media_ref.clone(),
-                tmdb_api_key.unwrap_or_default(),
-                tmdb_access_token,
-            )
-            .await
-            {
-                let desired = meta.title.trim();
-                if !desired.is_empty() {
-                    let _ = rename_torrent(&client, &base, hash, desired).await;
+        if let Some(hash) = torrent_hash.as_deref() {
+            let api_key = tmdb_api_key.unwrap_or_default();
+            let mut tmdb_candidates: Vec<Media> = Vec::new();
+
+            if let Some(current) = media.clone() {
+                tmdb_candidates.push(current);
+            }
+            if let Some(name) = torrent_name.as_deref() {
+                if let Some(parsed) = parse_media(name) {
+                    if !tmdb_candidates.contains(&parsed) {
+                        tmdb_candidates.push(parsed);
+                    }
+                }
+            }
+            if let Some(dn) = dn_name.as_deref() {
+                if let Some(parsed) = parse_media(dn) {
+                    if !tmdb_candidates.contains(&parsed) {
+                        tmdb_candidates.push(parsed);
+                    }
+                }
+            }
+
+            for candidate in tmdb_candidates {
+                if let Ok(Some(meta)) = fetch_tmdb_metadata(
+                    app.clone(),
+                    candidate.clone(),
+                    api_key.clone(),
+                    tmdb_access_token.clone(),
+                )
+                .await
+                {
+                    let desired = meta.title.trim();
+                    if !desired.is_empty() {
+                        let _ = rename_torrent(&client, &base, hash, desired).await;
+                    }
+                    media = Some(candidate);
+                    break;
                 }
             }
         }
@@ -651,9 +676,9 @@ async fn fetch_tmdb_metadata(
         .build()
         .map_err(|e| format!("Failed to create TMDb client: {e}"))?;
 
-    let (query, media_type) = match media {
-        Media::Show { ref name, .. } => (name.clone(), "tv"),
-        Media::Movie { ref title, .. } => (title.clone(), "movie"),
+    let (query, media_type, media_year_hint) = match media {
+        Media::Show { ref name, .. } => (sanitize_tmdb_title_query(name), "tv", None),
+        Media::Movie { ref title, year, .. } => (sanitize_tmdb_title_query(title), "movie", year),
         _ => return Ok(None),
     };
 
@@ -674,7 +699,7 @@ async fn fetch_tmdb_metadata(
         }
     }
     let mut origin_hint: Option<&'static str> = None;
-    let mut wanted_year = None;
+    let mut wanted_year = media_year_hint.or_else(|| extract_any_year(&query));
     if media_type == "tv" {
         let (country_stripped, country_hint) = split_trailing_country_hint(&query);
         if let Some(code) = country_hint {
@@ -688,7 +713,9 @@ async fn fetch_tmdb_metadata(
             }
         }
         let (base_name, year_opt) = split_trailing_year(&query);
-        wanted_year = year_opt;
+        if wanted_year.is_none() {
+            wanted_year = year_opt;
+        }
         if let Some(y) = year_opt {
             if !base_name.is_empty() {
                 search_queries.insert(0, (base_name.clone(), Some(y)));
@@ -721,6 +748,11 @@ async fn fetch_tmdb_metadata(
         if media_type == "tv" {
             if let Some(y) = year_hint.or(wanted_year) {
                 search_url.push_str("&first_air_date_year=");
+                search_url.push_str(&y.to_string());
+            }
+        } else if media_type == "movie" {
+            if let Some(y) = year_hint.or(wanted_year) {
+                search_url.push_str("&year=");
                 search_url.push_str(&y.to_string());
             }
         }
@@ -1378,6 +1410,54 @@ mod tests {
         assert_eq!(name, "Paradise");
         assert_eq!(year, Some(2025));
     }
+
+    #[test]
+    fn splits_parenthesized_trailing_year_for_disambiguation() {
+        let (name, year) = split_trailing_year("Game of Thrones (2011)");
+        assert_eq!(name, "Game of Thrones");
+        assert_eq!(year, Some(2011));
+    }
+
+    #[test]
+    fn strips_parenthesized_trailing_year() {
+        let stripped = strip_trailing_year("Game of Thrones (2011)");
+        assert_eq!(stripped, "Game of Thrones");
+    }
+
+    #[test]
+    fn extracts_any_year_from_noisy_text() {
+        let year = extract_any_year("Game of Thrones (2011) S01 (2160p x265 10bit HDR)");
+        assert_eq!(year, Some(2011));
+    }
+
+    #[test]
+    fn sanitizes_tmdb_title_query_for_episode_style_names() {
+        let q = sanitize_tmdb_title_query("The Pitt S02E11 500 P M 2160p HMAX WEB-DL DDP5 1 H 265-NTb [ UIndex.org ]");
+        assert_eq!(q, "The Pitt");
+    }
+
+    #[test]
+    fn parses_the_pitt_episode_release_name() {
+        let input = "The Pitt S02E11 500 P M 2160p HMAX WEB-DL DDP5 1 H 265-NTb [ UIndex.org ]";
+        let media = parse_media(input);
+        match media {
+            Some(Media::Show {
+                name,
+                season,
+                episode,
+                quality,
+                source,
+                ..
+            }) => {
+                assert_eq!(name, "The Pitt");
+                assert_eq!(season, 2);
+                assert_eq!(episode, Some(11));
+                assert_eq!(quality.as_deref(), Some("2160p"));
+                assert_eq!(source.as_deref(), Some("WEB-DL"));
+            }
+            _ => panic!("expected show parse for The Pitt S02E11 release"),
+        }
+    }
 }
 
 fn normalize(value: &str) -> String {
@@ -1387,32 +1467,90 @@ fn normalize(value: &str) -> String {
         .unwrap_or_else(|| value.trim().to_string())
 }
 
+fn sanitize_tmdb_title_query(value: &str) -> String {
+    let mut s = normalize(value);
+    s = Regex::new(r"(?i)\[[^\]]*\]")
+        .ok()
+        .map(|re| re.replace_all(&s, " ").to_string())
+        .unwrap_or(s);
+    s = Regex::new(r"(?i)\bS\d{1,2}E\d{1,2}\b.*$")
+        .ok()
+        .map(|re| re.replace(&s, "").to_string())
+        .unwrap_or(s);
+    s = Regex::new(r"(?i)\bseason\s+\d{1,2}\b.*$")
+        .ok()
+        .map(|re| re.replace(&s, "").to_string())
+        .unwrap_or(s);
+    s = Regex::new(r"\s+")
+        .ok()
+        .map(|re| re.replace_all(&s, " ").trim().to_string())
+        .unwrap_or_else(|| s.trim().to_string());
+    s
+}
+
 fn tmdb_alias_key(value: &str) -> String {
     normalize(value).to_lowercase()
 }
 
 fn strip_trailing_year(value: &str) -> String {
-    Regex::new(r"(?i)\s+(19\d{2}|20\d{2}|21\d{2})$")
+    let trimmed = value.trim();
+
+    if let Ok(paren_re) =
+        Regex::new(r"(?i)\s*[\(\[]\s*(19\d{2}|20\d{2})\s*[\)\]]\s*$")
+    {
+        let stripped = paren_re.replace(trimmed, "").trim().to_string();
+        if stripped != trimmed {
+            return stripped;
+        }
+    }
+
+    Regex::new(r"(?i)\s+(19\d{2}|20\d{2})\s*$")
         .ok()
-        .map(|re| re.replace(value.trim(), "").trim().to_string())
-        .unwrap_or_else(|| value.trim().to_string())
+        .map(|re| re.replace(trimmed, "").trim().to_string())
+        .unwrap_or_else(|| trimmed.to_string())
+}
+
+fn extract_any_year(value: &str) -> Option<i32> {
+    Regex::new(r"(?i)\b(19\d{2}|20\d{2})\b")
+        .ok()
+        .and_then(|re| re.captures(value))
+        .and_then(|caps| caps.get(1))
+        .and_then(|m| m.as_str().parse::<i32>().ok())
 }
 
 fn split_trailing_year(value: &str) -> (String, Option<i32>) {
-    let re = Regex::new(r"(?i)^(?P<name>.+?)\s+(?P<year>19\d{2}|20\d{2}|21\d{2})$");
-    if let Ok(re) = re {
-        if let Some(caps) = re.captures(value.trim()) {
+    let trimmed = value.trim();
+
+    if let Ok(paren_re) =
+        Regex::new(r"(?i)^(?P<name>.+?)\s*[\(\[]\s*(?P<year>19\d{2}|20\d{2})\s*[\)\]]\s*$")
+    {
+        if let Some(caps) = paren_re.captures(trimmed) {
             let name = caps
                 .name("name")
                 .map(|m| m.as_str().trim().to_string())
-                .unwrap_or_else(|| value.trim().to_string());
+                .unwrap_or_else(|| trimmed.to_string());
             let year = caps
                 .name("year")
                 .and_then(|m| m.as_str().parse::<i32>().ok());
             return (name, year);
         }
     }
-    (value.trim().to_string(), None)
+
+    if let Ok(plain_re) = Regex::new(r"(?i)^(?P<name>.+?)\s+(?P<year>19\d{2}|20\d{2})\s*$")
+    {
+        if let Some(caps) = plain_re.captures(trimmed) {
+            let name = caps
+                .name("name")
+                .map(|m| m.as_str().trim().to_string())
+                .unwrap_or_else(|| trimmed.to_string());
+            let year = caps
+                .name("year")
+                .and_then(|m| m.as_str().parse::<i32>().ok());
+            return (name, year);
+        }
+    }
+
+    (trimmed.to_string(), None)
 }
 
 fn strip_trailing_season(value: &str) -> String {
